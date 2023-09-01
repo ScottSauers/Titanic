@@ -1,4 +1,3 @@
-# Importing necessary libraries and modules
 import pandas as pd  # For data manipulation and analysis
 import json  # For reading JSON files
 from xgboost import XGBClassifier  # XGBoost classifier model
@@ -11,73 +10,75 @@ from sklearn.preprocessing import StandardScaler  # For feature scaling
 from sklearn.pipeline import Pipeline  # For creating pipelines
 from sklearn.compose import ColumnTransformer  # For applying multiple transformers
 
-# Function to remove the 'classifier__' prefix from hyperparameters
-# This is useful when hyperparameters are nested inside a pipeline
+# Function to remove 'classifier__' prefix from hyperparameters
 def remove_prefix(params):
     return {key.replace('classifier__', ''): value for key, value in params.items()}
 
-# Load the training dataset from the specified path
-# This CSV file contains the training data for the Titanic dataset
+# Load both interaction and non-interaction training and test datasets
 train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')
-
-# Load the test dataset from the specified path
-# This CSV file contains the test data for the Titanic dataset
 test_df = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered.csv')
+train_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')
+test_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered_no_interaction.csv')
 
-# Separate features and target variable from the training dataset
-# 'Survived' is the target variable, rest are features
+# Separate features and target variable
 X_train = train_df.drop('Survived', axis=1)
 y_train = train_df['Survived']
-X_test = test_df  # Test dataset only contains features
+X_test = test_df
 
-# Create a pipeline for numerical features
-# First, missing values are imputed using the mean of the column
-# Then, features are scaled to have mean=0 and variance=1
+X2_train = train_df_X2.drop('Survived', axis=1)
+y2_train = train_df_X2['Survived']
+X2_test = test_df_X2
+
+# Create pipeline for numerical features
 num_pipeline = Pipeline([
     ('imputer', SimpleImputer(strategy='mean')),
     ('scaler', StandardScaler())
 ])
 
-# Assuming all features are numerical, applying the pipeline to all columns
+# Create preprocessors for both interaction and non-interaction datasets
 preprocessor = ColumnTransformer([
     ('num', num_pipeline, list(X_train.columns))
 ])
 
-# List of model names for iteration
-model_names = ['xgb', 'logreg', 'rf', 'svc', 'knn']
+preprocessor_X2 = ColumnTransformer([
+    ('num', num_pipeline, list(X2_train.columns))
+])
 
-# Loop through each model, read best hyperparameters, train and generate predictions
-for name in model_names:
+# List of model names for interaction and non-interaction datasets
+model_names_with_interaction = ['logreg']
+model_names_without_interaction = ['xgb', 'rf', 'svc', 'knn']
+
+# Loop through each model that uses interaction terms
+for name in model_names_with_interaction:
     try:
-        # Try to load the best hyperparameters for each model from a JSON file
         with open(f'best_{name}_params.json', 'r') as f:
             best_params = remove_prefix(json.load(f))
     except FileNotFoundError:
-        # If the JSON file is not found, skip this model
         print(f"JSON file for {name.upper()} not found. Skipping this model.")
         continue
-
-    # Initialize the correct model type based on the name and use the best hyperparameters
-    # Each model is wrapped in a pipeline that first applies preprocessor
-    if name == 'xgb':
-        model = Pipeline([('preprocessor', preprocessor), ('classifier', XGBClassifier(**best_params))])
-    elif name == 'logreg':
-        model = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression(**best_params))])
-    elif name == 'rf':
-        model = Pipeline([('preprocessor', preprocessor), ('classifier', RandomForestClassifier(**best_params))])
-    elif name == 'svc':
-        model = Pipeline([('preprocessor', preprocessor), ('classifier', SVC(**best_params))])
-    elif name == 'knn':
-        model = Pipeline([('preprocessor', preprocessor), ('classifier', KNeighborsClassifier(**best_params))])
-
-    # Fit the model to the training data
+    model = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression(**best_params))])
     model.fit(X_train, y_train)
-
-    # Generate predictions on the test dataset
-    # Converting predictions to integer type for Kaggle submission
     predictions = model.predict(X_test).astype(int)
-
-    # Create Kaggle submission file
-    # Saving the Passenger ID and predictions to a new CSV file
     submission = pd.DataFrame({'PassengerId': test_df['PassengerId'].astype(int), 'Survived': predictions})
+    submission.to_csv(f'/Users/scott/Downloads/titanic/{name}_submission.csv', index=False)
+
+# Loop through each model that does not use interaction terms
+for name in model_names_without_interaction:
+    try:
+        with open(f'best_{name}_params.json', 'r') as f:
+            best_params = remove_prefix(json.load(f))
+    except FileNotFoundError:
+        print(f"JSON file for {name.upper()} not found. Skipping this model.")
+        continue
+    if name == 'xgb':
+        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', XGBClassifier(**best_params))])
+    elif name == 'rf':
+        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', RandomForestClassifier(**best_params))])
+    elif name == 'svc':
+        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', SVC(**best_params))])
+    elif name == 'knn':
+        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', KNeighborsClassifier(**best_params))])
+    model.fit(X2_train, y2_train)
+    predictions = model.predict(X2_test).astype(int)
+    submission = pd.DataFrame({'PassengerId': test_df_X2['PassengerId'].astype(int), 'Survived': predictions})
     submission.to_csv(f'/Users/scott/Downloads/titanic/{name}_submission.csv', index=False)
