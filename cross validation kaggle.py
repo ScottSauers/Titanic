@@ -19,21 +19,25 @@ import json  # For reading and writing JSON files
 def remove_prefix(params):
     return {key.replace('classifier__', ''): value for key, value in params.items()}
 
-# Load the feature-engineered training dataset
+# Load the feature-engineered training datasets
 # Catch FileNotFoundError in case the file path is incorrect
 try:
     train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')
+    train_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')  # Reading the CSV file into a DataFrame
 except FileNotFoundError:
-    print("CSV file not found. Please check the file path.")
+    print("CSV file(s) not found. Please check the file path.")
 
-# Check if 'Survived' column exists, as it is our target variable
-if 'Survived' not in train_df.columns:
-    print("Column 'Survived' not found in the dataset.")
+# Check if 'Survived' column exists in both datasets, as it is our target variable
+if 'Survived' not in train_df.columns or 'Survived' not in train_df_X2.columns:
+    print("Column 'Survived' not found in one or both of the datasets.")
 
-# Separate features and target variable
+# Separate features and target variable for both datasets
 # X contains all columns except 'Survived', y contains 'Survived'
+# X2 and y2 are for the non-interaction terms dataset
 X = train_df.drop('Survived', axis=1)
 y = train_df['Survived']
+X2 = train_df_X2.drop('Survived', axis=1)
+y2 = train_df_X2['Survived']
 
 # Create a pipeline for numerical features
 # 1. SimpleImputer replaces missing values with the mean
@@ -43,9 +47,13 @@ num_pipeline = Pipeline([
     ('scaler', StandardScaler())  # Scaling the feature values
 ])
 
-# Assuming all features are numerical, apply the numerical pipeline to all columns
 preprocessor = ColumnTransformer([
     ('num', num_pipeline, list(X.columns))
+])
+
+# Create another preprocessor for X2
+preprocessor_X2 = ColumnTransformer([
+    ('num', num_pipeline, list(X2.columns))
 ])
 
 # Set up k-fold cross-validation
@@ -56,42 +64,53 @@ kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 model_performance = {}
 model_scores = {}
 
-# List of model names
-model_names = ['xgb', 'logreg', 'rf', 'svc', 'knn']
+# List of model names for interaction and non-interaction terms
+model_names_with_interaction = ['logreg']
+model_names_without_interaction = ['xgb', 'rf', 'svc', 'knn']
 
-# Loop through each model
-# 1. Load best hyperparameters from a JSON file
-# 2. Perform k-fold CV and store performance
-for name in model_names:
-    # Try to open the JSON file containing the best parameters for the model
+# Loop through each model with interaction terms
+for name in model_names_with_interaction:
     try:
         with open(f'best_{name}_params.json', 'r') as f:
             best_params = json.load(f)
     except FileNotFoundError:
         print(f"JSON file for {name.upper()} not found. Skipping this model.")
         continue
-    
-    # Remove the prefix 'classifier__' from the parameter names
+
     best_params = remove_prefix(best_params)
-    
-    # Create a pipeline for each model type, incorporating the best parameters
-    # Initialize the chosen classifier with the best hyperparameters
-    if name == 'xgb':
-        pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', XGBClassifier(**best_params))])
-    elif name == 'logreg':
-        pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression(**best_params))])
-    elif name == 'rf':
-        pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', RandomForestClassifier(**best_params))])
-    elif name == 'svc':
-        pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', SVC(**best_params))])
-    elif name == 'knn':
-        pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', KNeighborsClassifier(**best_params))])
-    
-    # Perform k-fold cross-validation using the pipeline
-    # Scoring is based on accuracy
+
+    pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression(**best_params))])
+
     cv_scores = cross_val_score(pipeline, X, y, cv=kfold, scoring='accuracy')
-    
-    # Calculate the mean score across all k folds
+
+    mean_score = np.mean(cv_scores)
+    model_performance[name] = mean_score
+    model_scores[name] = cv_scores
+    print(f"{name.upper()} k-fold CV Mean Score: {mean_score}")
+
+# Loop through each model without interaction terms
+for name in model_names_without_interaction:
+    try:
+        with open(f'best_{name}_params.json', 'r') as f:
+            best_params = json.load(f)
+    except FileNotFoundError:
+        print(f"JSON file for {name.upper()} not found. Skipping this model.")
+        continue
+
+    best_params = remove_prefix(best_params)
+
+    if name == 'xgb':
+        pipeline = Pipeline([('preprocessor', preprocessor_X2), ('classifier', XGBClassifier(**best_params))])
+    elif name == 'rf':
+        pipeline = Pipeline([('preprocessor', preprocessor_X2), ('classifier', RandomForestClassifier(**best_params))])
+    elif name == 'svc':
+        pipeline = Pipeline([('preprocessor', preprocessor_X2), ('classifier', SVC(**best_params))])
+    elif name == 'knn':
+        pipeline = Pipeline([('preprocessor', preprocessor_X2), ('classifier', KNeighborsClassifier(**best_params))])
+
+
+    cv_scores = cross_val_score(pipeline, X2, y2, cv=kfold, scoring='accuracy')
+
     mean_score = np.mean(cv_scores)
     model_performance[name] = mean_score
     model_scores[name] = cv_scores
