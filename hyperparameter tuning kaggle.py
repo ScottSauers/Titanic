@@ -15,6 +15,7 @@ import json  # Importing the JSON library to save and load data in JSON format
 # Load the feature-engineered training dataset
 try:
     train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')  # Reading the CSV file into a DataFrame
+    train_no_int_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')  # Reading the CSV file into a DataFrame
 except FileNotFoundError:
     print("CSV file not found. Please check the file path.")  # Error message if the file is not found
 
@@ -25,6 +26,9 @@ if 'Survived' not in train_df.columns:
 # Separate features and target variable
 X = train_df.drop('Survived', axis=1)  # Dropping the 'Survived' column to obtain features
 y = train_df['Survived']  # Target variable 'Survived'
+
+X2 = train_no_int_df.drop('Survived', axis=1)  # Dropping the 'Survived' column to obtain features
+y2 = train_no_int_df['Survived']  # Target variable 'Survived'
 
 # Create a pipeline for numerical features
 # Imputer fills missing values, and StandardScaler standardizes the features
@@ -38,9 +42,29 @@ preprocessor = ColumnTransformer([
     ('num', num_pipeline, list(X.columns))  # Applying numerical pipeline to all columns
 ])
 
+# Dynamically set the columns for the ColumnTransformer based on the DataFrame in use
+preprocessor_X = ColumnTransformer([
+    ('num', num_pipeline, list(X.columns))  # Applying numerical pipeline to all columns in X
+])
+
+preprocessor_X2 = ColumnTransformer([
+    ('num', num_pipeline, list(X2.columns))  # Applying numerical pipeline to all columns in X2
+])
+
+# Adjust the pipelines to use the respective preprocessor
+xgb_pipeline_X = Pipeline([('preprocessor', preprocessor_X), ('classifier', XGBClassifier())])
+logreg_pipeline_X = Pipeline([('preprocessor', preprocessor_X), ('classifier', LogisticRegression())])
+rf_pipeline_X = Pipeline([('preprocessor', preprocessor_X), ('classifier', RandomForestClassifier())])
+
+xgb_pipeline_X2 = Pipeline([('preprocessor', preprocessor_X2), ('classifier', XGBClassifier())])
+rf_pipeline_X2 = Pipeline([('preprocessor', preprocessor_X2), ('classifier', RandomForestClassifier())])
+
+
+
+
 # Create pipelines for different classifiers along with preprocessing steps
 # Each pipeline first applies preprocessing and then fits the model
-xgb_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', XGBClassifier())])
+#xgb_pipeline = Pipeline([('preprocessor', preprocessor2), ('classifier', XGBClassifier())])
 # XGBoost (eXtreme Gradient Boosting)
 # What it Does: XGBoost is an ensemble learning method based on decision trees.
 # It's particularly good for large datasets and high-dimensional feature spaces.
@@ -53,7 +77,7 @@ xgb_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', XGBClass
 # Hyperparameters in Use: Learning rate (how quickly the model adapts), number of trees (n_estimators),
 # depth of the trees (max_depth), subsample ratio of the training instance (subsample),
 # and feature sampling ratio (colsample_bytree).
-logreg_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression())])
+#logreg_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression())])
 # Logistic Regression
 # What it Does: It's a statistical method for modeling the relationship between a binary dependent variable
 # and one or more independent variables.
@@ -65,7 +89,7 @@ logreg_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', Logis
 # Hyperparameters in Use: C controls the inverse of regularization strength, penalty specifies the norm used
 # in penalization (l1 or l2), solver specifies the algorithm to use for optimization,
 # and max_iter specifies the maximum number of iterations for the solver to converge.
-rf_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', RandomForestClassifier())])
+#rf_pipeline = Pipeline([('preprocessor', preprocessor2), ('classifier', RandomForestClassifier())])
 # Random Forest
 # What it Does: It's an ensemble learning method that fits multiple decision trees on various sub-samples of the dataset
 # and uses averaging to improve the predictive accuracy.
@@ -76,7 +100,7 @@ rf_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', RandomFor
 # Hyperparameters in Use: Number of trees in the forest (n_estimators), the maximum depth of the tree (max_depth),
 # the minimum number of samples required to split an internal node (min_samples_split),
 # and the minimum number of samples required to be at a leaf node (min_samples_leaf).
-svc_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', SVC())])
+#svc_pipeline = Pipeline([('preprocessor', preprocessor2), ('classifier', SVC())])
 # Support Vector Machines (SVC)
 # What it Does: It's a classification method that finds the hyperplane that best divides a dataset into classes.
 # How it Works: The algorithm selects the hyperplane that has the maximum margin, i.e., the maximum distance
@@ -86,7 +110,7 @@ svc_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', SVC())])
 # to it from both classes.
 # Hyperparameters in Use: C is the regularization parameter, kernel specifies the kernel type to be used (linear, rbf),
 # and gamma is the kernel coefficient for 'rbf'.
-knn_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', KNeighborsClassifier())])
+#knn_pipeline = Pipeline([('preprocessor', preprocessor2), ('classifier', KNeighborsClassifier())])
 # k-Nearest Neighbors (KNN)
 # What it Does: KNN is a type of instance-based learning, used for classification and regression tasks.
 # How it Works: Given a new observation, KNN identifies k closest instances (neighbors) in the training data
@@ -139,7 +163,7 @@ logreg_params = {
     'classifier__solver': ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'],
     
     # max_iter: Maximum number of iterations taken for the solvers to converge.
-    'classifier__max_iter': [60, 70, 75, 80]
+    'classifier__max_iter': [60, 70, 75, 80, 200]
 }
 
 # Random Forest hyperparameters
@@ -185,8 +209,13 @@ knn_params = {
 
 # Perform GridSearchCV for each model
 # GridSearchCV performs k-fold cross-validation on each hyperparameter combination
-pipelines = {'xgb': xgb_pipeline, 'logreg': logreg_pipeline, 'rf': rf_pipeline, 'svc': svc_pipeline, 'knn': knn_pipeline}
-params = {'xgb': xgb_params, 'logreg': logreg_params, 'rf': rf_params, 'svc': svc_params, 'knn': knn_params}
+# For data with interaction terms (uses X)
+pipelines_with_interaction = {'logreg': logreg_pipeline_X, 'xgb': xgb_pipeline_X, 'rf': rf_pipeline_X}
+params_with_interaction = {'logreg': logreg_params, 'xgb': xgb_params, 'rf': rf_params}
+
+# For data without interaction terms (uses X2)
+pipelines_without_interaction = {'xgb': xgb_pipeline_X2, 'rf': rf_pipeline_X2}
+params_without_interaction = {'xgb': xgb_params, 'rf': rf_params}
 
 # GridSearchCV (Grid Search Cross-Validation)
 # What it Does: GridSearchCV is a hyperparameter tuning technique that exhaustively searches through a specified hyperparameter grid
@@ -208,13 +237,24 @@ params = {'xgb': xgb_params, 'logreg': logreg_params, 'rf': rf_params, 'svc': sv
 # Cross-Validation Technique Used: The code uses StratifiedKFold, which is a variation of k-fold cross-validation.
 # In StratifiedKFold, the folds are made by preserving the percentage of samples for each class.
 # This ensures that each fold is a good representative of the overall dataset, especially useful for imbalanced classes.
-
-for name, pipeline in pipelines.items():
-    grid = GridSearchCV(pipeline, params[name], cv=kfold, scoring='accuracy', verbose=1)  # GridSearchCV setup
-    grid.fit(X, y)  # Performing GridSearchCV
+# For DataFrame with interaction terms (uses X)
+for name, pipeline in {'logreg': logreg_pipeline_X}.items():
+    grid = GridSearchCV(pipeline, params_with_interaction[name], cv=kfold, scoring='accuracy', verbose=1)
+    grid.fit(X, y)
     print(f"Best {name.upper()} Parameters: {grid.best_params_}")  # Displaying the best hyperparameters
     print(f"Best {name.upper()} Score: {grid.best_score_}")  # Displaying the highest accuracy achieved
+    
+    # Save best hyperparameters to a JSON file
+    with open(f'best_{name}_params.json', 'w') as f:
+        json.dump(grid.best_params_, f)  # Saving the best hyperparameters as a JSON file
 
+# For DataFrame without interaction terms (uses X2)
+for name, pipeline2 in {'xgb': xgb_pipeline_X2, 'rf': rf_pipeline_X2}.items():
+    grid = GridSearchCV(pipeline2, params_without_interaction[name], cv=kfold, scoring='accuracy', verbose=1)
+    grid.fit(X2, y2)
+    print(f"Best {name.upper()} Parameters: {grid.best_params_}")  # Displaying the best hyperparameters
+    print(f"Best {name.upper()} Score: {grid.best_score_}")  # Displaying the highest accuracy achieved
+    
     # Save best hyperparameters to a JSON file
     with open(f'best_{name}_params.json', 'w') as f:
         json.dump(grid.best_params_, f)  # Saving the best hyperparameters as a JSON file
