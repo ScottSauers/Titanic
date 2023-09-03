@@ -1,84 +1,88 @@
-import pandas as pd  # For data manipulation and analysis
-import json  # For reading JSON files
-from xgboost import XGBClassifier  # XGBoost classifier model
-from sklearn.linear_model import LogisticRegression  # Logistic Regression model
-from sklearn.ensemble import RandomForestClassifier  # Random Forest classifier model
-from sklearn.svm import SVC  # Support Vector Machine model
-from sklearn.neighbors import KNeighborsClassifier  # K-Nearest Neighbors model
-from sklearn.impute import SimpleImputer  # For missing value imputation
-from sklearn.preprocessing import StandardScaler  # For feature scaling
-from sklearn.pipeline import Pipeline  # For creating pipelines
-from sklearn.compose import ColumnTransformer  # For applying multiple transformers
+import pandas as pd
+import json
+import pickle
+from sklearn.base import BaseEstimator
 
-# Function to remove 'classifier__' prefix from hyperparameters
-def remove_prefix(params):
-    return {key.replace('classifier__', ''): value for key, value in params.items()}
+# Custom class to allow setting parameters in pipeline
+class ClassifierWrapper(BaseEstimator):
+    def __init__(self, classifier, params):
+        self.classifier = classifier
+        self.params = params
 
-# Load both interaction and non-interaction training and test datasets
-train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')
-test_df = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered.csv')
-train_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')
-test_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered_no_interaction.csv')
+    def fit(self, X, y):
+        self.classifier.set_params(**self.params)
+        self.classifier.fit(X, y)
+        return self
 
-# Separate features and target variable
-X_train = train_df.drop('Survived', axis=1)
-y_train = train_df['Survived']
-X_test = test_df
+    def predict(self, X):
+        return self.classifier.predict(X)
 
-X2_train = train_df_X2.drop('Survived', axis=1)
-y2_train = train_df_X2['Survived']
-X2_test = test_df_X2
+# Load datasets
+try:
+    train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')
+    train_no_int_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')
+    test_df = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered.csv').drop('Survived', axis=1)
+    test_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered_no_interaction.csv').drop('Survived', axis=1)
+except FileNotFoundError:
+    print("CSV file not found. Please check the file path.")
 
-# Create pipeline for numerical features
-num_pipeline = Pipeline([
-    ('imputer', SimpleImputer(strategy='mean')),
-    ('scaler', StandardScaler())
-])
+datasets = {
+    'xgb': train_df.drop('PassengerId', axis=1),
+    'rf': train_df.drop('PassengerId', axis=1),
+    'svc': train_df.drop('PassengerId', axis=1),
+    'knn': train_df.drop('PassengerId', axis=1),
+    'logreg': train_no_int_df.drop('PassengerId', axis=1)
+}
 
-# Create preprocessors for both interaction and non-interaction datasets
-preprocessor = ColumnTransformer([
-    ('num', num_pipeline, list(X_train.columns))
-])
+test_datasets = {
+    'xgb': test_df,
+    'rf': test_df,
+    'svc': test_df,
+    'knn': test_df,
+    'logreg': test_df_X2
+}
 
-preprocessor_X2 = ColumnTransformer([
-    ('num', num_pipeline, list(X2_train.columns))
-])
+algorithms = ['xgb', 'rf', 'svc', 'knn', 'logreg']
 
-# List of model names for interaction and non-interaction datasets
-model_names_with_interaction = ['logreg']
-model_names_without_interaction = ['xgb', 'rf', 'svc', 'knn']
+# Train models using entire datasets and make predictions
+for algo in algorithms:
+    # Load hyperparameters
+    json_filename = f'best_{algo}_params.json'
+    with open(json_filename, 'r') as f:
+        hyperparams = json.load(f)
 
-# Loop through each model that uses interaction terms
-for name in model_names_with_interaction:
-    try:
-        with open(f'best_{name}_params.json', 'r') as f:
-            best_params = remove_prefix(json.load(f))
-    except FileNotFoundError:
-        print(f"JSON file for {name.upper()} not found. Skipping this model.")
-        continue
-    model = Pipeline([('preprocessor', preprocessor), ('classifier', LogisticRegression(**best_params))])
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test).astype(int)
-    submission = pd.DataFrame({'PassengerId': test_df['PassengerId'].astype(int), 'Survived': predictions})
-    submission.to_csv(f'/Users/scott/Downloads/titanic/{name}_submission.csv', index=False)
+    # Load pipeline
+    pickle_filename = f'best_{algo}_pipeline.pkl'
+    with open(pickle_filename, 'rb') as f:
+        pipeline = pickle.load(f)
 
-# Loop through each model that does not use interaction terms
-for name in model_names_without_interaction:
-    try:
-        with open(f'best_{name}_params.json', 'r') as f:
-            best_params = remove_prefix(json.load(f))
-    except FileNotFoundError:
-        print(f"JSON file for {name.upper()} not found. Skipping this model.")
-        continue
-    if name == 'xgb':
-        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', XGBClassifier(**best_params))])
-    elif name == 'rf':
-        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', RandomForestClassifier(**best_params))])
-    elif name == 'svc':
-        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', SVC(**best_params))])
-    elif name == 'knn':
-        model = Pipeline([('preprocessor', preprocessor_X2), ('classifier', KNeighborsClassifier(**best_params))])
-    model.fit(X2_train, y2_train)
-    predictions = model.predict(X2_test).astype(int)
-    submission = pd.DataFrame({'PassengerId': test_df_X2['PassengerId'].astype(int), 'Survived': predictions})
-    submission.to_csv(f'/Users/scott/Downloads/titanic/{name}_submission.csv', index=False)
+    # Update pipeline with saved hyperparameters
+    classifier = pipeline.steps[-1][1]
+    wrapper = ClassifierWrapper(classifier, hyperparams)
+    pipeline.steps[-1] = (pipeline.steps[-1][0], wrapper)
+
+    # Prepare training dataset
+    data = datasets[algo]
+    X = data.drop('Survived', axis=1)
+    y = data['Survived']
+
+    # Fit model on entire dataset
+    pipeline.fit(X, y)
+
+    # Prepare test dataset
+    test_data = test_datasets[algo]
+    test_X = test_data.drop('PassengerId', axis=1)
+
+    # Make predictions
+    predictions = pipeline.predict(test_X)
+
+    # Create Kaggle submission file
+    submission = pd.DataFrame({
+        'PassengerId': test_data['PassengerId'].astype('int32'),
+        'Survived': predictions.astype('int32')
+    })
+    
+    submission_file = f'{algo}_submission.csv'
+    submission.to_csv(submission_file, index=False)
+
+    print(f"Kaggle submission file for {algo} saved as {submission_file}.")
