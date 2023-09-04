@@ -43,19 +43,14 @@ if train_df is None or test_df is None:
 # Drop the 'Survived' column if exists in the test dataset
 test_df.drop('Survived', axis=1, errors='ignore', inplace=True)
 
-# Check for NaN columns in test dataset
-nan_columns = test_df.columns[test_df.isna().any()].tolist()
-if nan_columns:
-    print(f"Columns with NaN values in the test dataset: {nan_columns}")
-    # Handle NaN columns here if needed
-
 # Prepare data
 train_data = train_df.drop('PassengerId', axis=1)
 test_data = test_df.drop('PassengerId', axis=1)
 X_train = train_data.drop(['Survived'], axis=1)
 y_train = train_data['Survived']
 
-algorithms = ['xgb', 'rf', 'svc', 'knn', 'logreg']
+# Add additional algorithms to the list
+algorithms = ['xgb', 'rf', 'svc', 'logreg', 'adaboost']
 
 # Train models using entire datasets and make predictions
 for algo in algorithms:
