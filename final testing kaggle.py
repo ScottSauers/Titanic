@@ -17,71 +17,75 @@ class ClassifierWrapper(BaseEstimator):
     def predict(self, X):
         return self.classifier.predict(X)
 
+# Function to load file safely
+def safe_file_load(file_path, file_type):
+    try:
+        if file_type == 'csv':
+            return pd.read_csv(file_path)
+        elif file_type == 'json':
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        elif file_type == 'pickle':
+            with open(file_path, 'rb') as f:
+                return pickle.load(f)
+    except FileNotFoundError:
+        print(f"{file_type.upper()} file not found: {file_path}")
+        return None
+
 # Load datasets
-try:
-    train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')
-    train_no_int_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')
-    test_df = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered.csv').drop('Survived', axis=1)
-    test_df_X2 = pd.read_csv('/Users/scott/Downloads/titanic/test_engineered_no_interaction.csv').drop('Survived', axis=1)
-except FileNotFoundError:
-    print("CSV file not found. Please check the file path.")
+train_df = safe_file_load('/Users/scott/Downloads/titanic/train_engineered.csv', 'csv')
+test_df = safe_file_load('/Users/scott/Downloads/titanic/test_engineered.csv', 'csv')
 
-datasets = {
-    'xgb': train_df.drop('PassengerId', axis=1),
-    'rf': train_df.drop('PassengerId', axis=1),
-    'svc': train_df.drop('PassengerId', axis=1),
-    'knn': train_df.drop('PassengerId', axis=1),
-    'logreg': train_no_int_df.drop('PassengerId', axis=1)
-}
+# Exit if datasets are not loaded
+if train_df is None or test_df is None:
+    exit()
 
-test_datasets = {
-    'xgb': test_df,
-    'rf': test_df,
-    'svc': test_df,
-    'knn': test_df,
-    'logreg': test_df_X2
-}
+# Drop the 'Survived' column if exists in the test dataset
+test_df.drop('Survived', axis=1, errors='ignore', inplace=True)
+
+# Check for NaN columns in test dataset
+nan_columns = test_df.columns[test_df.isna().any()].tolist()
+if nan_columns:
+    print(f"Columns with NaN values in the test dataset: {nan_columns}")
+    # Handle NaN columns here if needed
+
+# Prepare data
+train_data = train_df.drop('PassengerId', axis=1)
+test_data = test_df.drop('PassengerId', axis=1)
+X_train = train_data.drop(['Survived'], axis=1)
+y_train = train_data['Survived']
 
 algorithms = ['xgb', 'rf', 'svc', 'knn', 'logreg']
 
 # Train models using entire datasets and make predictions
 for algo in algorithms:
     # Load hyperparameters
-    json_filename = f'best_{algo}_params.json'
-    with open(json_filename, 'r') as f:
-        hyperparams = json.load(f)
+    hyperparams = safe_file_load(f'best_{algo}_params.json', 'json')
+    if hyperparams is None:
+        continue
 
     # Load pipeline
-    pickle_filename = f'best_{algo}_pipeline.pkl'
-    with open(pickle_filename, 'rb') as f:
-        pipeline = pickle.load(f)
+    pipeline = safe_file_load(f'best_{algo}_pipeline.pkl', 'pickle')
+    if pipeline is None:
+        continue
 
     # Update pipeline with saved hyperparameters
-    classifier = pipeline.steps[-1][1]
+    classifier = pipeline.named_steps.get('classifier', pipeline.steps[-1][1])
     wrapper = ClassifierWrapper(classifier, hyperparams)
     pipeline.steps[-1] = (pipeline.steps[-1][0], wrapper)
 
-    # Prepare training dataset
-    data = datasets[algo]
-    X = data.drop('Survived', axis=1)
-    y = data['Survived']
-
     # Fit model on entire dataset
-    pipeline.fit(X, y)
-
-    # Prepare test dataset
-    test_data = test_datasets[algo]
-    test_X = test_data.drop('PassengerId', axis=1)
+    pipeline.fit(X_train, y_train)
 
     # Make predictions
-    predictions = pipeline.predict(test_X)
+    predictions = pipeline.predict(test_data)
 
     # Create Kaggle submission file
     submission = pd.DataFrame({
-        'PassengerId': test_data['PassengerId'].astype('int32'),
+        'PassengerId': test_df['PassengerId'].astype('int32'),
         'Survived': predictions.astype('int32')
     })
-    
+
     submission_file = f'{algo}_submission.csv'
     submission.to_csv(submission_file, index=False)
 
