@@ -64,6 +64,9 @@ def add_family_features(df):
     df['FamilyID'] = df['LastName'] + "_" + df['FamilySize'].astype(str)
     return df
 
+def add_missing_age_indicator(df):
+    df['Age_Missing'] = df['Age'].isna().astype(int)
+    return df
 
 def add_new_features(df):
     df['IsChild'] = df['Age'] < 18
@@ -105,10 +108,17 @@ def feature_scaling(df, scaler=None):
     passenger_id_column = None
     if "PassengerId" in df.columns:
         passenger_id_column = df["PassengerId"].copy()
+        
+    # Store the "Survived" column temporarily if it exists in the DataFrame
+    survived_column = None
+    if "Survived" in df.columns:
+        survived_column = df["Survived"].copy()
 
-    # Drop the "PassengerId" column
+    # Drop the "PassengerId" and "Survived" columns if they exist
     if "PassengerId" in df.columns:
         df.drop("PassengerId", axis=1, inplace=True)
+    if "Survived" in df.columns:
+        df.drop("Survived", axis=1, inplace=True)
 
     # Apply scaling
     if scaler is None:
@@ -117,11 +127,14 @@ def feature_scaling(df, scaler=None):
     numerical_cols = [col for col in numerical_cols if len(df[col].unique()) > 2]
     df.loc[:, numerical_cols] = scaler.fit_transform(df[numerical_cols])
 
-    # Add back the "PassengerId" column in a way that avoids fragmentation
+    # Add back the "PassengerId" and "Survived" columns in a way that avoids fragmentation
     if passenger_id_column is not None:
         df = pd.concat([passenger_id_column, df], axis=1)
+    if survived_column is not None:
+        df = pd.concat([survived_column, df], axis=1)
 
     return df, scaler
+
 
 def convert_to_numeric(df):
     df = df.copy()
@@ -153,8 +166,21 @@ def drop_non_numeric_text_columns(df):
     return df
 
 def knn_imputation(df):
+    # Store the 'Survived' column separately
+    survived_column = df['Survived'].copy()
+    
+    # Drop the 'Survived' column from the DataFrame
+    df = df.drop('Survived', axis=1)
+    
+    # Initialize the KNNImputer
     imputer = KNNImputer(n_neighbors=3)
+    
+    # Perform KNN imputation on the DataFrame without 'Survived'
     df_imputed = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+    
+    # Re-add the 'Survived' column to the DataFrame
+    df_imputed['Survived'] = survived_column
+    
     return df_imputed
 
 def main():
@@ -163,6 +189,7 @@ def main():
     combined_df = add_title_feature(combined_df)
     combined_df = add_family_features(combined_df)
     combined_df = add_new_features(combined_df)
+    combined_df = add_missing_age_indicator(combined_df)
     
     # One-hot encoding
     combined_df = one_hot_encoding(combined_df, ['Sex', 'Embarked', 'Title', 'FamilyID', 'Deck', 'TicketPrefix', 'AgeBin_Class', 'AgeBin_Sex'])
