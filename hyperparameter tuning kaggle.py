@@ -49,9 +49,6 @@ for algo in algorithms:
 
     model.fit(X_train, y_train)
 
-    # Save the trained model
-    best_models[algo] = model
-
 # Save full pipeline and hyperparameters to files
 for algo, model in best_models.items():
     hyperparams = model.fitted_pipeline_[-1].get_params()
