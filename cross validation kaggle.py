@@ -26,27 +26,35 @@ try:
 except FileNotFoundError:
     print("CSV file not found. Please check the file path.")
 
+# Add additional algorithms to datasets and algorithms list
 datasets = {
     'xgb': train_df,
     'rf': train_df,
     'svc': train_df,
-    'knn': train_df,
-    'logreg': train_df
-}
+    'logreg': train_df,
+    'adaboost': train_df,}
 
-algorithms = ['xgb', 'rf', 'svc', 'knn', 'logreg']
+algorithms = ['xgb', 'rf', 'svc', 'logreg', 'adaboost']
 
 # Load saved hyperparameters and pipelines, and perform CV
 for algo in algorithms:
     # Load hyperparameters
     json_filename = f'best_{algo}_params.json'
-    with open(json_filename, 'r') as f:
-        hyperparams = json.load(f)
+    try:
+        with open(json_filename, 'r') as f:
+            hyperparams = json.load(f)
+    except FileNotFoundError:
+        print(f"JSON file {json_filename} not found. Skipping {algo}.")
+        continue
 
     # Load pipeline
     pickle_filename = f'best_{algo}_pipeline.pkl'
-    with open(pickle_filename, 'rb') as f:
-        pipeline = pickle.load(f)
+    try:
+        with open(pickle_filename, 'rb') as f:
+            pipeline = pickle.load(f)
+    except FileNotFoundError:
+        print(f"Pickle file {pickle_filename} not found. Skipping {algo}.")
+        continue
 
     # Update pipeline with saved hyperparameters
     classifier = pipeline.steps[-1][1]
