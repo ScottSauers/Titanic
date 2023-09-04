@@ -23,7 +23,6 @@ class ClassifierWrapper(BaseEstimator):
 # Load datasets
 try:
     train_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered.csv')
-    train_no_int_df = pd.read_csv('/Users/scott/Downloads/titanic/train_engineered_no_interaction.csv')
 except FileNotFoundError:
     print("CSV file not found. Please check the file path.")
 
@@ -32,7 +31,7 @@ datasets = {
     'rf': train_df,
     'svc': train_df,
     'knn': train_df,
-    'logreg': train_no_int_df
+    'logreg': train_df
 }
 
 algorithms = ['xgb', 'rf', 'svc', 'knn', 'logreg']
@@ -56,7 +55,7 @@ for algo in algorithms:
 
     # Prepare dataset
     data = datasets[algo]
-    X = data.drop('Survived', axis=1)
+    X = data.drop(['Survived', 'PassengerId'], axis=1)
     y = data['Survived']
 
     # Perform CV
