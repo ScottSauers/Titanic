@@ -73,10 +73,10 @@ def add_new_features(df):
     df['IsElderly'] = df['Age'] > 60
     df['IsAlone'] = df['FamilySize'] == 1
     df['Deck'] = df['Cabin'].apply(lambda x: x[0] if pd.notna(x) else 'U')
-    df['TicketPrefix'] = df['Ticket'].apply(lambda x: x.split()[0] if len(x.split()) > 1 else 'None')
+    df['TicketPrefix'] = df['Ticket'].apply(lambda x: 'PC' if len(x.split()) > 1 and x.split()[0] == 'PC' else 'None')
     df['FarePerPerson'] = df['Fare'] / df['FamilySize']
     df['NameLength'] = df['Name'].apply(len)
-    df['AgeGroup_Fare'] = df['Age'] * df['Fare']
+    df['Age_Fare'] = df['Age'] * df['Fare']
     df['Title_Age'] = df['Title'].astype(str) + "_" + df['Age'].astype(str)
     df['Sex_Class'] = df['Sex'].astype(str) + "_" + df['Pclass'].astype(str)
     
@@ -98,8 +98,9 @@ def one_hot_encoding(df, cols, drop_first=True):
     return df
 
 def remove_single_member_family_columns(df):
-    family_columns = [col for col in df.columns if 'FamilyID_' in col and col.endswith('_1')]
-    df.drop(family_columns, axis=1, inplace=True)
+    for i in range(1, 6):  # Looping through numbers 1 to 5
+        family_columns = [col for col in df.columns if 'FamilyID_' in col and col.endswith(f'_{i}')]
+        df.drop(family_columns, axis=1, inplace=True)
     return df
 
 
@@ -205,6 +206,8 @@ def main():
     
     # Convert to numeric (optional, for boolean values)
     combined_df = convert_to_numeric(combined_df)
+
+    combined_df = remove_single_member_family_columns(combined_df)
 
     # Feature scaling
     combined_df, _ = feature_scaling(combined_df)
